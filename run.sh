@@ -1,10 +1,9 @@
 python3 multirun.py \
-   --model_name gpt4o \
+   --model_name gpt54 \
    --cache_task_images True \
-   --per_instance_api_calls_limit 50 \
-   --pre_build_all_images True \
+   --pre_build_all_images False \
    --remove_image False \
-   --pr_file data/go.jsonl \
+   --pr_file data/ts/darkreader__darkreader_dataset.jsonl \
    --config_file config/default.yaml  --skip_existing=True \
    --per_instance_cost_limit 5.00 \
    --print_config=False \
