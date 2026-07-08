@@ -41,6 +41,35 @@ def test_openai_model(openai_mock_client):
         model.query(TEST_HISTORY)
 
 
+def test_openai_model_accepts_string_response(openai_mock_client):
+    TEST_MODEL_ARGUMENTS = ModelArguments("gpt-5.4")
+    with patch("sweagent.agent.models.keys_config"), patch("sweagent.agent.models.OpenAI"):
+        model = OpenAIModel(TEST_MODEL_ARGUMENTS, [])
+    openai_mock_client.chat.completions.create.return_value = "test"
+    model.client = openai_mock_client
+
+    assert model.query(TEST_HISTORY) == "test"
+    assert model.stats.api_calls == 1
+    assert model.stats.tokens_sent == 0
+    assert model.stats.tokens_received == 0
+
+
+def test_openai_model_accepts_dict_response(openai_mock_client):
+    TEST_MODEL_ARGUMENTS = ModelArguments("gpt-5.4")
+    with patch("sweagent.agent.models.keys_config"), patch("sweagent.agent.models.OpenAI"):
+        model = OpenAIModel(TEST_MODEL_ARGUMENTS, [])
+    openai_mock_client.chat.completions.create.return_value = {
+        "choices": [{"message": {"content": "test"}}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+    }
+    model.client = openai_mock_client
+
+    assert model.query(TEST_HISTORY) == "test"
+    assert model.stats.api_calls == 1
+    assert model.stats.tokens_sent == 10
+    assert model.stats.tokens_received == 5
+
+
 @pytest.mark.parametrize("model_name", list(TogetherModel.MODELS) + list(TogetherModel.SHORTCUTS))
 def test_together_model(mock_together_response, model_name):
     with patch("sweagent.agent.models.keys_config"), patch("sweagent.agent.models.together") as mock_together:

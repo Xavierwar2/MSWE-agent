@@ -6,6 +6,7 @@ import os
 from collections import defaultdict
 from dataclasses import dataclass, fields
 from pathlib import Path
+from typing import Any
 
 import together
 from anthropic import AI_PROMPT, HUMAN_PROMPT, Anthropic, AnthropicBedrock
@@ -258,9 +259,6 @@ class OpenAIModel(BaseModel):
             )
         else:
             api_base_url: str | None = keys_config.get("OPENAI_API_BASE_URL", None)
-            print(f"api_base_url: {api_base_url}",
-                  f"api_key: {keys_config['OPENAI_API_KEY']}"
-            )
             self.client = OpenAI(api_key=keys_config["OPENAI_API_KEY"], base_url=api_base_url)
 
     def history_to_messages(
@@ -277,6 +275,43 @@ class OpenAIModel(BaseModel):
             return "\n".join([entry["content"] for entry in history])
         # Return history components with just role, content fields
         return [{k: v for k, v in entry.items() if k in ["role", "content"]} for entry in history]
+
+    @staticmethod
+    def _get_response_field(response: Any, field: str, default: Any = None) -> Any:
+        if isinstance(response, dict):
+            return response.get(field, default)
+        return getattr(response, field, default)
+
+    def _extract_response_usage(self, response: Any) -> tuple[int, int] | None:
+        usage = self._get_response_field(response, "usage")
+        if usage is None:
+            return None
+
+        input_tokens = self._get_response_field(usage, "prompt_tokens")
+        output_tokens = self._get_response_field(usage, "completion_tokens")
+        if input_tokens is None or output_tokens is None:
+            return None
+        return int(input_tokens), int(output_tokens)
+
+    def _extract_response_content(self, response: Any) -> str:
+        if isinstance(response, str):
+            return response
+
+        choices = self._get_response_field(response, "choices")
+        if not choices:
+            msg = f"OpenAI response did not include choices: {response!r}"
+            raise RuntimeError(msg)
+
+        choice = choices[0]
+        message = self._get_response_field(choice, "message")
+        content = self._get_response_field(message, "content") if message is not None else None
+        if content is None:
+            text = self._get_response_field(choice, "text")
+            if text is None:
+                msg = f"OpenAI response choice did not include message content: {choice!r}"
+                raise RuntimeError(msg)
+            content = text
+        return content
 
     @retry(
         wait=wait_random_exponential(min=1, max=15),
@@ -300,10 +335,14 @@ class OpenAIModel(BaseModel):
             msg = f"Context window ({self.model_metadata['max_context']} tokens) exceeded"
             raise CostLimitExceededError(msg)
         # Calculate + update costs, return response
-        input_tokens = response.usage.prompt_tokens
-        output_tokens = response.usage.completion_tokens
-        self.update_stats(input_tokens, output_tokens)
-        return response.choices[0].message.content
+        usage = self._extract_response_usage(response)
+        if usage is None:
+            logger.warning(
+                "Token usage not found in OpenAI response. Using 0 for input and output tokens.",
+            )
+            usage = (0, 0)
+        self.update_stats(*usage)
+        return self._extract_response_content(response)
 
 
 class AnthropicModel(BaseModel):
