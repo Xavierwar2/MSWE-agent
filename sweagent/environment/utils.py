@@ -716,8 +716,14 @@ def get_instances(
     
 
 def specify_languages(file_path: str | Path):
+    file_path = Path(file_path)
+    path_parts = {part.lower() for part in file_path.parts}
+    file_path_str = str(file_path)
+
     for lang in LANGUAGE_MAP:
-        if any(f'{x}_' in str(file_path) for x in LANGUAGE_MAP[lang]) or any(f'{x}-' in str(file_path) for x in LANGUAGE_MAP[lang]):
+        if any(x in path_parts for x in LANGUAGE_MAP[lang]):
+            return lang
+        if any(f'{x}_' in file_path_str for x in LANGUAGE_MAP[lang]) or any(f'{x}-' in file_path_str for x in LANGUAGE_MAP[lang]):
             return lang
     return None
 

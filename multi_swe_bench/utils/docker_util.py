@@ -1,10 +1,35 @@
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
 import docker
 
 docker_client = docker.from_env()
+
+
+def _sanitize_mswebench_name_part(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+
+
+def _mswebench_image_candidates(image_name: str) -> list[str]:
+    name, sep, tag = image_name.partition(":")
+    if not sep or "/" not in name:
+        return []
+
+    org, repo = name.split("/", 1)
+    candidates = [
+        f"mswebench/{org}_m_{repo}:{tag}",
+        (
+            "mswebench/"
+            f"{_sanitize_mswebench_name_part(org)}"
+            "_m_"
+            f"{_sanitize_mswebench_name_part(repo)}"
+            f":{tag}"
+        ),
+    ]
+
+    return list(dict.fromkeys(candidates))
 
 
 def exists(image_name: str) -> bool:
@@ -15,8 +40,35 @@ def exists(image_name: str) -> bool:
         return False
 
 
+def exists_or_alias_mswebench(image_name: str, logger: logging.Logger) -> bool:
+    if exists(image_name):
+        return True
+
+    for candidate in _mswebench_image_candidates(image_name):
+        try:
+            image = docker_client.images.get(candidate)
+        except docker.errors.ImageNotFound:
+            continue
+
+        repo, tag = image_name.rsplit(":", 1)
+        image.tag(repo, tag=tag)
+        logger.info(
+            "Image `%s` found as `%s`; tagged local alias `%s`.",
+            image_name,
+            candidate,
+            image_name,
+        )
+        return True
+
+    return False
+
+
 def build(
-    workdir: Path, dockerfile_name: str, image_full_name: str, logger: logging.Logger
+    workdir: Path,
+    dockerfile_name: str,
+    image_full_name: str,
+    logger: logging.Logger,
+    buildargs: Optional[dict[str, str]] = None,
 ):
     workdir = str(workdir)
     logger.info(
@@ -31,6 +83,7 @@ def build(
             forcerm=True,
             decode=True,
             encoding="utf-8",
+            buildargs=buildargs,
         )
 
         for log in build_logs:

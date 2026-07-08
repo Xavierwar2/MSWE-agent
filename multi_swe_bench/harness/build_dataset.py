@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import os
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -19,12 +20,21 @@ from multi_swe_bench.harness.image import Config, Image
 from multi_swe_bench.harness.instance import Instance
 from multi_swe_bench.harness.pull_request import Base, PullRequest
 from multi_swe_bench.harness.registry import register_data, data_registry
-from multi_swe_bench.utils.docker_util import build, exists, run
+from multi_swe_bench.utils.docker_util import build, exists_or_alias_mswebench, run
 from multi_swe_bench.utils.fs_utils import copy_source_code
 from multi_swe_bench.utils.git_util import clone_repository, get_all_commit_hashes
 from multi_swe_bench.utils.logger import get_non_propagate_logger, setup_logger
 from multi_swe_bench.utils.thread_util import Result, SPMCThreadPool
 
+
+PROXY_ENV_KEYS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+)
 
 
 def str_to_bool(value):
@@ -163,7 +173,7 @@ def build_image(
     cli: CliArgs,
     logger: logging.Logger,
 ):
-    if exists(image.image_full_name()):
+    if exists_or_alias_mswebench(image.image_full_name(), logger):
         logger.info(f"Image {image.image_full_name()} already exists, skipping...")
         return
 
@@ -200,6 +210,7 @@ def build_image(
             cli.log_level,
             cli.print_to_console_build_image,
         ),
+        buildargs=image.config.global_env,
     )
     logger.info(f"Image {image.image_full_name()} built successfully.")
 
@@ -266,21 +277,32 @@ def build_images(instances: list[Instance], cli: CliArgs, logger: logging.Logger
     thread_pool.stop()
     logger.info("Images built successfully.")
 
-def convert_to_dict(env: Optional[list[str]]) -> Optional[dict[str, str]]:
+def convert_to_dict(env: Optional[list[str]]) -> dict[str, str]:
     if env is None:
-        return None
+        return {}
 
     if len(env) == 0:
-        return None
+        return {}
 
     result = {}
     for item in env:
-        key_value = item.split("=")
+        key_value = item.split("=", 1)
         if len(key_value) == 2:
             key, value = key_value
             result[key] = value
 
     return result
+
+
+def get_build_env(env: Optional[list[str]]) -> Optional[dict[str, str]]:
+    build_env = {
+        key: value
+        for key in PROXY_ENV_KEYS
+        if (value := os.environ.get(key))
+    }
+    build_env.update(convert_to_dict(env))
+
+    return build_env or None
 
 def prepare_datas(file_path: str, cli: CliArgs, prebuild: bool) -> dict[str, Instance]:
     
@@ -290,12 +312,13 @@ def prepare_datas(file_path: str, cli: CliArgs, prebuild: bool) -> dict[str, Ins
     register_data(file_path)
 
     prs = load_pull_requests(logger)
+    build_env = get_build_env(cli.global_env)
 
     instances = create_instances(
         prs,
         Config(
             need_clone=cli.need_clone,
-            global_env=convert_to_dict(cli.global_env),
+            global_env=build_env,
             clear_env=cli.clear_env,
         ),
         logger,

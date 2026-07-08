@@ -304,14 +304,20 @@ class SWEEnv(gym.Env):
             "git status",
             "git restore .",
             f"git reset --hard {self.base_commit}",
-            "git clean -fdxq",
+            "git clean -fdq",
         ]:
-            log = self.communicate_with_handling(
-                input=cmd,
-                error_msg="Failed to clean repository",
-                except_error_msgs=['fatal', 'not a git command'],
-                timeout_duration=LONG_TIMEOUT,
-            )
+            try:
+                log = self.communicate_with_handling(
+                    input=cmd,
+                    error_msg="Failed to clean repository",
+                    except_error_msgs=['fatal', 'not a git command'],
+                    timeout_duration=LONG_TIMEOUT,
+                    no_output_timeout_duration=LONG_TIMEOUT,
+                )
+            except TimeoutError as e:
+                raise TimeoutError(
+                    f"Timeout while cleaning repository with command: {cmd}"
+                ) from e
 
         # pre-install dependencies for swe-agent ACI tools
         for cmd in [
