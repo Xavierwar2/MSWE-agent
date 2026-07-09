@@ -136,6 +136,8 @@ class _ContinueLoop(Exception):
 def _prediction_from_instance(instance_id: str, model_patch: str | None) -> dict[str, Any]:
     org, repo_and_number = instance_id.split("__", 1)
     repo, number = repo_and_number.rsplit("-", 1)
+    if model_patch is not None:
+        model_patch = model_patch.lstrip("\n")
     return {
         "org": org,
         "repo": repo,

@@ -153,6 +153,8 @@ def _instance_id_from_prediction(prediction: dict[str, Any]) -> str | None:
 
 def _prediction_from_instance(instance_id: str, model_patch: str | None) -> dict[str, Any]:
     org, repo, number = _instance_parts(instance_id)
+    if model_patch is not None:
+        model_patch = model_patch.lstrip("\n")
     return {
         "org": org,
         "repo": repo,
