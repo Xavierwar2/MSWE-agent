@@ -8,6 +8,25 @@ import docker
 docker_client = docker.from_env()
 
 
+def _is_removal_in_progress(error: docker.errors.APIError) -> bool:
+    return (
+        getattr(error, "status_code", None) == 409
+        and "removal of container" in str(error)
+        and "is already in progress" in str(error)
+    )
+
+
+def _remove_container(container) -> None:
+    try:
+        container.remove()
+    except docker.errors.NotFound:
+        return
+    except docker.errors.APIError as e:
+        if _is_removal_in_progress(e):
+            return
+        raise
+
+
 def _sanitize_mswebench_name_part(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
 
@@ -134,6 +153,6 @@ def run(
         container.wait()
         output = container.logs().decode("utf-8")
 
-    container.remove()
+    _remove_container(container)
 
     return output

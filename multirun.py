@@ -38,7 +38,6 @@ from rich.markdown import Markdown
 from simple_parsing import parse
 from simple_parsing.helpers.flatten import FlattenedAccess
 from simple_parsing.helpers.serialization.serializable import FrozenSerializable
-from swebench import KEY_INSTANCE_ID, KEY_MODEL, KEY_PREDICTION
 from multi_swe_bench.harness.build_dataset import CliArgs
 from unidiff import PatchSet
 
@@ -136,6 +135,30 @@ class ScriptArguments(FlattenedAccess, FrozenSerializable):
 
 class _ContinueLoop(Exception):
     """Used for internal control flow"""
+
+
+def _instance_parts(instance_id: str) -> tuple[str, str, int]:
+    org, repo_and_number = instance_id.split("__", 1)
+    repo, number = repo_and_number.rsplit("-", 1)
+    return org, repo, int(number)
+
+
+def _instance_id_from_prediction(prediction: dict[str, Any]) -> str | None:
+    if "instance_id" in prediction:
+        return prediction["instance_id"]
+    if {"org", "repo", "number"} <= prediction.keys():
+        return f"{prediction['org']}__{prediction['repo']}-{prediction['number']}"
+    return None
+
+
+def _prediction_from_instance(instance_id: str, model_patch: str | None) -> dict[str, Any]:
+    org, repo, number = _instance_parts(instance_id)
+    return {
+        "org": org,
+        "repo": repo,
+        "number": number,
+        "fix_patch": model_patch,
+    }
 
 
 class MainHook:
@@ -446,7 +469,7 @@ class Main:
                     with prediction_path.open("r") as f:
                         for line in f:
                             data = json.loads(line)
-                            if data[KEY_INSTANCE_ID] == instance_id:
+                            if _instance_id_from_prediction(data) == instance_id:
                                 logger.info(f"Found existing prediction for instance {instance_id}")
                                 return True
                 os.remove(log_path)
@@ -455,11 +478,7 @@ class Main:
     def _save_predictions(self, instance_id: str, info):
         output_file = self.traj_dir / "all_preds.jsonl"
         model_patch = info["submission"] if "submission" in info else None
-        datum = {
-            KEY_MODEL: Path(self.traj_dir).name,
-            KEY_INSTANCE_ID: instance_id,
-            KEY_PREDICTION: model_patch,
-        }
+        datum = _prediction_from_instance(instance_id, model_patch)
         with open(output_file, "a+") as fp:
             print(json.dumps(datum), file=fp, flush=True)
         logger.info(f"Saved predictions to {output_file}")

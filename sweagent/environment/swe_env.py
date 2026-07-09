@@ -52,6 +52,14 @@ PATH_TO_REQS = "/root/requirements.txt"
 PATH_TO_ENV_YML = "/root/environment.yml"
 
 
+def _is_container_removal_in_progress(error: docker.errors.APIError) -> bool:
+    return (
+        getattr(error, "status_code", None) == 409
+        and "removal of container" in str(error)
+        and "is already in progress" in str(error)
+    )
+
+
 @dataclass(frozen=True)
 class EnvironmentArguments(FrozenSerializable):
     """Configure data sources and setup instructions for the environment in which we solve the tasks."""
@@ -516,6 +524,13 @@ class SWEEnv(gym.Env):
         else:
             try:
                 self.container_obj.remove(force=True)
+            except docker.errors.NotFound:
+                self.logger.info("Agent container already removed")
+            except docker.errors.APIError as e:
+                if _is_container_removal_in_progress(e):
+                    self.logger.info("Agent container removal already in progress")
+                else:
+                    self.logger.warning("Failed to remove container", exc_info=True)
             except KeyboardInterrupt:
                 raise
             except Exception:

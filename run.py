@@ -38,7 +38,6 @@ from rich.markdown import Markdown
 from simple_parsing import parse
 from simple_parsing.helpers.flatten import FlattenedAccess
 from simple_parsing.helpers.serialization.serializable import FrozenSerializable
-from swebench import KEY_INSTANCE_ID, KEY_MODEL, KEY_PREDICTION
 from multi_swe_bench.harness.build_dataset import CliArgs
 from unidiff import PatchSet
 
@@ -132,6 +131,17 @@ class ScriptArguments(FlattenedAccess, FrozenSerializable):
 
 class _ContinueLoop(Exception):
     """Used for internal control flow"""
+
+
+def _prediction_from_instance(instance_id: str, model_patch: str | None) -> dict[str, Any]:
+    org, repo_and_number = instance_id.split("__", 1)
+    repo, number = repo_and_number.rsplit("-", 1)
+    return {
+        "org": org,
+        "repo": repo,
+        "number": int(number),
+        "fix_patch": model_patch,
+    }
 
 
 class MainHook:
@@ -446,11 +456,7 @@ class Main:
     def _save_predictions(self, instance_id: str, info):
         output_file = self.traj_dir / "all_preds.jsonl"
         model_patch = info["submission"] if "submission" in info else None
-        datum = {
-            KEY_MODEL: Path(self.traj_dir).name,
-            KEY_INSTANCE_ID: instance_id,
-            KEY_PREDICTION: model_patch,
-        }
+        datum = _prediction_from_instance(instance_id, model_patch)
         with open(output_file, "a+") as fp:
             print(json.dumps(datum), file=fp, flush=True)
         logger.info(f"Saved predictions to {output_file}")
