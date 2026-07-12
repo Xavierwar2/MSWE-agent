@@ -299,7 +299,7 @@ submit() {
     fi
 
     git add -A
-    git diff --cached > model.patch
+    git diff --cached -- . ':(exclude).gitignore' > model.patch
     echo "<<SUBMISSION||"
     cat model.patch
     echo "||SUBMISSION>>"

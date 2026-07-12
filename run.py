@@ -51,6 +51,7 @@ from sweagent.environment.utils import (
     get_gh_issue_data,
     parse_gh_issue_url,
 )
+from sweagent.patch_utils import paths_from_patch, sanitize_model_patch
 
 __doc__: str = """ Run inference. Usage examples:
 
@@ -376,6 +377,7 @@ class Main:
             traj_dir=self.traj_dir,
             return_type="info_trajectory",
         )
+        info = self._sanitize_submission(info)
         self._save_predictions(instance_id, info)
         for hook in self.hooks:
             hook.on_instance_completed(info=info, trajectory=trajectory)
@@ -462,6 +464,20 @@ class Main:
         with open(output_file, "a+") as fp:
             print(json.dumps(datum), file=fp, flush=True)
         logger.info(f"Saved predictions to {output_file}")
+
+    def _sanitize_submission(self, info: dict[str, Any]) -> dict[str, Any]:
+        if "submission" not in info:
+            return info
+        assert self.env.record is not None  # mypy
+        excluded_paths = paths_from_patch(self.env.record.instance.pr.test_patch)
+        sanitized = sanitize_model_patch(info["submission"], exclude_paths=excluded_paths)
+        if sanitized != info["submission"]:
+            logger.info(
+                "Sanitized model patch before saving: removed benchmark test-patch files and root .gitignore changes"
+            )
+            info = dict(info)
+            info["submission"] = sanitized
+        return info
 
 
 def get_args(args=None) -> ScriptArguments:
